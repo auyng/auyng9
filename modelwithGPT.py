@@ -7,10 +7,11 @@ import os
 import numpy as np
 
 # API 키와 슬랙 토큰 등을 읽어옵니다.
-access = ""
-secret = ""
-myToken = ""
-slackchannel = ""
+access = "your access"
+secret = "your secret"
+myToken = "your myToken"
+slackchannel = "your slackchannel"
+minutedata = "minute15"
 
 # 구매 가격을 저장할 파일 경로
 BUY_PRICE_FILE = "buy_price.txt"
@@ -25,13 +26,13 @@ def post_message(token, channel, text):
 
 def get_target_price(ticker, k):
     """변동성 돌파 전략으로 매수 목표가 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="minute60", count=2)
+    df = pyupbit.get_ohlcv(ticker, interval=minutedata, count=2)
     target_price = df.iloc[0]['close'] + (df.iloc[0]['high'] - df.iloc[0]['low']) * k
     return target_price
 
 def get_rsi(ticker, period=14):
     """RSI (Relative Strength Index) 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="minute60", count=period+1)
+    df = pyupbit.get_ohlcv(ticker, interval= minutedata, count=period+1)
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -41,13 +42,30 @@ def get_rsi(ticker, period=14):
 
 def get_mfi(ticker, period=14):
     """MFI (Money Flow Index) 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="minute60", count=period+1)
+    df = pyupbit.get_ohlcv(ticker, interval=minutedata, count=period+1)
     typical_price = (df['high'] + df['low'] + df['close']) / 3
     money_flow = typical_price * df['volume']
     positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(window=period).sum()
     negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(window=period).sum()
     mfi = 100 - (100 / (1 + positive_flow / negative_flow))
     return mfi.iloc[-1]
+
+def get_bollinger_bands(ticker, period=20):
+    """볼린저밴드 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval=minutedata, count=period+1)
+    tp = df['close']
+    ma = tp.rolling(window=period).mean()
+    std = tp.rolling(window=period).std()
+    upper_band = ma + (std * 2)
+    lower_band = ma - (std * 2)
+    return upper_band.iloc[-1], lower_band.iloc[-1]
+
+def get_sentiment_index(ticker, period=14):
+    """투자심리도 지표 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval=minutedata, count=period+1)
+    close = df['close']
+    sentiment = close.rolling(window=period).apply(lambda x: np.sum(x > x.mean()) / period * 100)
+    return sentiment.iloc[-1]
 
 def get_balance(ticker):
     """잔고 조회"""
@@ -88,6 +106,8 @@ def trade(ticker, investment_per_coin):
         current_price = get_current_price(ticker)
         rsi = get_rsi(ticker)
         mfi = get_mfi(ticker)
+        upper_band, lower_band = get_bollinger_bands(ticker)
+        sentiment_index = get_sentiment_index(ticker)
         buy_price = get_buy_price(ticker)  # 구매 가격 조회
 
         # 매수 조건
@@ -101,6 +121,12 @@ def trade(ticker, investment_per_coin):
 
         if mfi < 20:
             buy_conditions.append("MFI is below 20 (oversold)")
+
+        # if current_price < lower_band:
+        #     buy_conditions.append("Current price is below lower Bollinger Band")
+
+        if sentiment_index < 20:
+            buy_conditions.append("Sentiment index is below 20 (very negative)")
 
         if buy_conditions:
             krw = get_balance("KRW")
@@ -121,11 +147,17 @@ def trade(ticker, investment_per_coin):
             if current_price > buy_price * 1.05:
                 sell_conditions.append("Price exceeded 105% of buy price")
 
-            if rsi > 70:
+            if rsi > 60:
                 sell_conditions.append("RSI is above 70 (overbought)")
 
-            if mfi > 80:
+            if mfi > 70:
                 sell_conditions.append("MFI is above 80 (overbought)")
+
+            # if current_price > upper_band:
+            #     sell_conditions.append("Current price is above upper Bollinger Band")
+
+            if sentiment_index > 70:
+                sell_conditions.append("Sentiment index is above 80 (very positive)")
 
             if sell_conditions:
                 sell_result = upbit.sell_market_order(ticker, crypto_balance * 0.9995)
@@ -143,9 +175,9 @@ def get_total_krw_balance():
     """총 원화 잔고 조회"""
     return get_balance("KRW")
 
-# 각 코인에 대해 30분마다 trade 함수 실행
+# 각 코인에 대해 15분마다 trade 함수 실행
 for ticker in tickers:
-    schedule.every(30).minutes.do(lambda t=ticker: trade(t, get_total_krw_balance() / n))
+    schedule.every(15).minutes.do(lambda t=ticker: trade(t, get_total_krw_balance() / n))
 
 # 자동매매 시작
 while True:

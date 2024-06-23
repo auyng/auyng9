@@ -7,12 +7,10 @@ import os
 import numpy as np
 
 # API 키와 슬랙 토큰 등을 읽어옵니다.
-with open("upbit.txt") as f:
-    lines = f.readlines()
-    access = lines[0].strip()
-    secret = lines[1].strip()
-    myToken = lines[2].strip()
-    slackchannel = lines[3].strip()
+access = ""
+secret = ""
+myToken = ""
+slackchannel = ""
 
 # 구매 가격을 저장할 파일 경로
 BUY_PRICE_FILE = "buy_price.txt"

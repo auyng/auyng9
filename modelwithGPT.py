@@ -14,7 +14,7 @@ access = ""
 secret = ""
 myToken = ""
 slackchannel = "#autotrade"
-minutedata = "minute5"
+minutedata = "minute3"  # 3분봉 데이터로 설정
 
 # 자동매매할 코인 리스트
 tickers = ["KRW-MTL", "KRW-HUNT"]  # 원하는 코인 티커를 추가
@@ -23,14 +23,29 @@ n = len(tickers)
 # 거래 수수료 (0.05% = 0.0005)
 FEE_RATE = 0.0005
 
+
+##아마존 aws 환경
 # SQLite 데이터베이스 설정
-conn = sqlite3.connect('C:/cryptoauto/upbit/trade_data.db')
+db_path = os.path.expanduser('~/trade_data.db')
+conn = sqlite3.connect(db_path)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS buy_price (ticker TEXT PRIMARY KEY, price REAL)''')
 conn.commit()
 
 # 거래 기록을 저장할 CSV 파일 경로
-TRADE_HISTORY_FILE = "C:/cryptoauto/upbit/trade_history.csv"
+TRADE_HISTORY_FILE = os.path.expanduser("~/trade_history.csv")
+
+
+# # SQLite 데이터베이스 설정
+# conn = sqlite3.connect('C:/cryptoauto/upbit/trade_data.db')
+# c = conn.cursor()
+# c.execute('''CREATE TABLE IF NOT EXISTS buy_price (ticker TEXT PRIMARY KEY, price REAL)''')
+# conn.commit()
+
+# # 거래 기록을 저장할 CSV 파일 경로
+# TRADE_HISTORY_FILE = "C:/cryptoauto/upbit/trade_history.csv"
+
+
 
 # 거래 기록 CSV 파일이 존재하지 않으면 헤더를 추가
 if not os.path.exists(TRADE_HISTORY_FILE):
@@ -166,15 +181,15 @@ post_message(myToken, slackchannel, "######업비트 자동매매 시작######")
 
 initial_balance = calculate_total_asset()  # 초기 자산 저장
 
-last_action = {"type": None, "time": None} #플래그 사용
+last_action = {"type": None, "time": None}  # 플래그 사용
 
 def trade(ticker, investment_per_coin):
     global last_action
     try:
         current_time = datetime.datetime.now()
         
-        # 최근 액션이 매수 또는 매도 후 5분 이내인지 확인
-        if last_action["time"] and (current_time - last_action["time"]).total_seconds() < 300:
+        # 최근 액션이 매수 또는 매도 후 3분 이내인지 확인
+        if last_action["time"] and (current_time - last_action["time"]).total_seconds() < 180:
             return
         
         target_price = get_target_price(ticker, 0.5)
@@ -216,7 +231,7 @@ def trade(ticker, investment_per_coin):
             if krw > 5000 and krw >= investment_per_coin:
                 buy_result = upbit.buy_market_order(ticker, investment_per_coin * (1-FEE_RATE))
                 set_buy_price(ticker, current_price)  # 구매 가격 저장
-                post_message(myToken, slackchannel, f"{ticker} 매수 완료: {buy_result}\n매수 금액: {investment_per_coin} KRW\n매수 가격: {current_price} KRW\n조건: {', '.join(buy_conditions)}")
+                post_message(myToken, slackchannel, f"{ticker} 매수 완료\n매수 금액: {investment_per_coin} KRW\n매수 가격: {current_price} KRW\n조건: {', '.join(buy_conditions)}")
                 save_trade_history(ticker, "매수", current_price, investment_per_coin, ', '.join(buy_conditions), rsi, mfi, upper_band, middle_band, lower_band, sentiment_index, short_ma, long_ma, macd, signal)
                 last_action = {"type": "buy", "time": current_time}
 
@@ -263,7 +278,6 @@ def trade(ticker, investment_per_coin):
         print(e)
         post_message(myToken, slackchannel, str(e))
 
-
 def get_total_krw_balance():
     """총 원화 잔고 조회"""
     return get_balance("KRW")
@@ -293,11 +307,11 @@ def on_exit():
 
 atexit.register(on_exit)
 
-# 각 코인에 대해 5분마다 trade 함수 실행
+# 각 코인에 대해 3분마다 trade 함수 실행
 for ticker in tickers:
-    schedule.every(5).minutes.do(lambda t=ticker: trade(t, get_total_krw_balance() / n))
+    schedule.every(3).minutes.do(lambda t=ticker: trade(t, get_total_krw_balance() / n))
 
 # 자동매매 시작
 while True:
-        schedule.run_pending()
-        time.sleep(1)
+    schedule.run_pending()
+    time.sleep(1)

@@ -14,10 +14,10 @@ access = ""
 secret = ""
 myToken = ""
 slackchannel = "#autotrade"
-minutedata = "minute3"  # 3분봉 데이터로 설정
+minutedata = "minute5"  # 30분봉 데이터로 설정
 
 # 자동매매할 코인 리스트
-tickers = ["KRW-MTL", "KRW-HUNT"]  # 원하는 코인 티커를 추가
+tickers = ["KRW-"]  # 원하는 코인 티커를 추가
 n = len(tickers)
 
 # 거래 수수료 (0.05% = 0.0005)
@@ -188,8 +188,8 @@ def trade(ticker, investment_per_coin):
     try:
         current_time = datetime.datetime.now()
         
-        # 최근 액션이 매수 또는 매도 후 3분 이내인지 확인
-        if last_action["time"] and (current_time - last_action["time"]).total_seconds() < 180:
+        # 최근 액션이 매수 또는 매도 후 30분 이내인지 확인
+        if last_action["time"] and (current_time - last_action["time"]).total_seconds() < 1800:
             return
         
         target_price = get_target_price(ticker, 0.5)
@@ -215,7 +215,7 @@ def trade(ticker, investment_per_coin):
             buy_conditions.append("MFI < 20 (과매도)")
 
         if sentiment_index < 20:
-            buy_conditions.append("투자심리도 < 20 (매우 부정적)")
+            buy_conditions.append("투자심리도 < 25 (매우 부정적)")
 
         if current_price < lower_band:
             buy_conditions.append("현재가 < 하단 볼린저밴드 기준선")
@@ -249,13 +249,13 @@ def trade(ticker, investment_per_coin):
                 sell_conditions.append(f"현재가 > 매수가의 {round(1 + 2 * FEE_RATE, 4) * 100}%")
 
             if rsi > 60:
-                sell_conditions.append("RSI > 60 (과매수)")
+                sell_conditions.append("RSI > 70 (과매수)")
 
             if mfi > 70:
-                sell_conditions.append("MFI > 70 (과매수)")
+                sell_conditions.append("MFI > 75 (과매수)")
 
             if sentiment_index > 70:
-                sell_conditions.append("투자심리도 > 70 (매우 긍정적)")
+                sell_conditions.append("투자심리도 > 75 (매우 긍정적)")
 
             if current_price > upper_band or current_price > middle_band:
                 sell_conditions.append("현재가 > 상단 볼린저 밴드 또는 기준선")
@@ -268,9 +268,14 @@ def trade(ticker, investment_per_coin):
 
             if len(sell_conditions) >= 3:  # 매도 조건 중 최소 3개 이상 충족 시
                 sell_result = upbit.sell_market_order(ticker, crypto_balance * (1-FEE_RATE))
-                sell_profit = (current_price - buy_price) * crypto_balance
-                sell_profit_rate = (sell_profit / (buy_price * crypto_balance)) * 100
-                post_message(myToken, slackchannel, f"{ticker} 매도 완료\n조건: {', '.join(sell_conditions)}\n매도 금액: {investment_per_coin} KRW\n매도 가격: {current_price} KRW\n수익: {sell_profit:.2f} KRW\n수익률: {sell_profit_rate:.2f}%")
+                
+                # 매도 후 수익과 수익률 계산 시 FEE_RATE 적용
+                net_sell_amount = current_price * crypto_balance * (1 - FEE_RATE)
+                net_buy_amount = buy_price * crypto_balance * (1 + FEE_RATE)
+                sell_profit = net_sell_amount - net_buy_amount
+                sell_profit_rate = (sell_profit / net_buy_amount) * 100
+                
+                post_message(myToken, slackchannel, f"{ticker} 매도 완료\n조건: {', '.join(sell_conditions)}\n매도 금액: {net_sell_amount} KRW\n매도 가격: {current_price} KRW\n수익: {sell_profit:.2f} KRW\n수익률: {sell_profit_rate:.2f}%")
                 save_trade_history(ticker, "매도", current_price, crypto_balance, ', '.join(sell_conditions), rsi, mfi, upper_band, middle_band, lower_band, sentiment_index, short_ma, long_ma, macd, signal)
                 last_action = {"type": "sell", "time": current_time}
 
@@ -309,7 +314,7 @@ atexit.register(on_exit)
 
 # 각 코인에 대해 3분마다 trade 함수 실행
 for ticker in tickers:
-    schedule.every(3).minutes.do(lambda t=ticker: trade(t, get_total_krw_balance() / n))
+    schedule.every(5).minutes.do(lambda t=ticker: trade(t, get_total_krw_balance() / n))
 
 # 자동매매 시작
 while True:

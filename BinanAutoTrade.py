@@ -29,8 +29,8 @@ symbol = "ETH/USDT"
 timedata = '1m'
 futureleverage = 3
 k_i = 0.5
-threshold_dif = 1
-threshold_ma = 6
+threshold_dif = 0.7
+threshold_ma = 5
 
 # 포지션 상태를 글로벌 변수로 설정
 position = {
@@ -187,14 +187,17 @@ def enter_long_position(exchange, symbol, cur_price, long_target, amount):
     
     buy_conditions = ["현재가 > 목표가"] if cur_price > long_target else []
 
-    if cur_price < lower_band or cur_price > middle_band:
-        buy_conditions.append("현재가 < 볼린저 밴드 하단 or 현재가 > 볼린저 밴드 중단")
+    if cur_price < lower_band :
+        buy_conditions.append("현재가 < 볼린저 밴드 하단")
     
-    if dif > dea:
-        buy_conditions.append("DIF > DEA")
+    if cur_price > middle_band:
+        buy_conditions.append("현재가 > 볼린저 밴드 중단")
     
-    if short_ma > long_ma:
-        buy_conditions.append("단기 이동평균 > 장기 이동평균")
+    if dif > dea and abs(dif - dea) > 0.2:
+        buy_conditions.append("DIF > DEA (차이 0.2)")
+    
+    if short_ma > long_ma and abs(short_ma - long_ma) > 1.5:
+        buy_conditions.append("단기 이동평균 > 장기 이동평균 (차이 1.5)")
     
     # 최소 3개의 조건이 충족되어야 진입
     if cur_price > long_target and len(buy_conditions) >= 3:
@@ -219,14 +222,17 @@ def enter_short_position(exchange, symbol, cur_price, short_target, amount):
     
     sell_conditions = ["현재가 < 목표가"] if cur_price < short_target else []
 
-    if cur_price > upper_band or cur_price > middle_band:
-        sell_conditions.append("현재가 > 볼린저 밴드 상단 or 현재가 > 볼린저 밴드 중단")
+    if cur_price > upper_band:
+        sell_conditions.append("현재가 > 볼린저 밴드 상단")
 
-    if dif < dea:
-        sell_conditions.append("DIF < DEA")
+    if cur_price < middle_band:
+        sell_conditions.append("현재가 < 볼린저 밴드 중단")
 
-    if short_ma < long_ma:
-        sell_conditions.append("단기 이동평균 < 장기 이동평균")
+    if dif < dea and abs(dif - dea) > 0.2:
+        sell_conditions.append("DIF < DEA (차이 0.2)")
+
+    if short_ma < long_ma and abs(short_ma - long_ma) > 1.5:
+        sell_conditions.append("단기 이동평균 < 장기 이동평균 (차이 1.5)")
     
     # 최소 3개의 조건이 충족되어야 진입
     if cur_price < short_target and len(sell_conditions) >= 3:
@@ -364,8 +370,8 @@ def notify_exit():
 # atexit 모듈을 사용하여 프로그램 종료 시 notify_exit 함수 호출
 atexit.register(notify_exit)
 
-# 각 코인에 대해 30초마다 trade 함수 실행
-schedule.every(30).seconds.do(lambda: trade(symbol))
+# 각 코인에 대해 10초마다 trade 함수 실행
+schedule.every(10).seconds.do(lambda: trade(symbol))
 
 # 자동매매 시작 알람
 post_message(myToken, slackchannel, "@@ 선물거래 자동매매 시작 @@")

@@ -27,8 +27,10 @@ binance = ccxt.binance(config={
 
 symbol = "ETH/USDT"
 timedata = '1m'
-futureleverage = 1
+futureleverage = 3
 k_i = 0.5
+threshold_dif = 1
+threshold_ma = 6
 
 # 포지션 상태를 글로벌 변수로 설정
 position = {
@@ -182,12 +184,9 @@ def enter_long_position(exchange, symbol, cur_price, long_target, amount):
     upper_band, middle_band, lower_band = get_bollinger_bands(exchange, symbol)
     dif, dea = get_macd(exchange, symbol)
     short_ma, long_ma = get_moving_averages(exchange, symbol)
-       
-    buy_conditions = []
-
-    if cur_price > long_target:
-        buy_conditions.append("현재가 > 목표가")
     
+    buy_conditions = ["현재가 > 목표가"] if cur_price > long_target else []
+
     if cur_price < lower_band or cur_price > middle_band:
         buy_conditions.append("현재가 < 볼린저 밴드 하단 or 현재가 > 볼린저 밴드 중단")
     
@@ -197,14 +196,15 @@ def enter_long_position(exchange, symbol, cur_price, long_target, amount):
     if short_ma > long_ma:
         buy_conditions.append("단기 이동평균 > 장기 이동평균")
     
-    if len(buy_conditions) >= 3:
+    # 최소 3개의 조건이 충족되어야 진입
+    if cur_price > long_target and len(buy_conditions) >= 3:
         try:
             order = exchange.create_market_buy_order(symbol=symbol, amount=amount)
             position['type'] = 'long'
             position['amount'] = amount
             position['entry_price'] = cur_price
             position['initial_balance'] = get_balance()  # 초기 자산 기록
-            post_message(myToken, slackchannel, f"## 롱 포지션 진입 성공 ##\n진입 조건 충족: {', '.join(buy_conditions)}")
+            post_message(myToken, slackchannel, f"## 롱 포지션 진입 성공 ##\n진입 조건 충족: {', '.join(buy_conditions)}\n코인: {symbol}\n매수 금액: {amount:.2f}\n진입 가격: {cur_price:.5f}\n목표가: {long_target:.5f}")
         except Exception as e:
             post_message(myToken, slackchannel, f"!! 롱 포지션 진입 실패 !!\n{e}")
 
@@ -216,12 +216,9 @@ def enter_short_position(exchange, symbol, cur_price, short_target, amount):
     upper_band, middle_band, lower_band = get_bollinger_bands(exchange, symbol)
     dif, dea = get_macd(exchange, symbol)
     short_ma, long_ma = get_moving_averages(exchange, symbol)
-        
-    sell_conditions = []
-
-    if cur_price < short_target:
-        sell_conditions.append("현재가 < 목표가")
     
+    sell_conditions = ["현재가 < 목표가"] if cur_price < short_target else []
+
     if cur_price > upper_band or cur_price > middle_band:
         sell_conditions.append("현재가 > 볼린저 밴드 상단 or 현재가 > 볼린저 밴드 중단")
 
@@ -231,16 +228,18 @@ def enter_short_position(exchange, symbol, cur_price, short_target, amount):
     if short_ma < long_ma:
         sell_conditions.append("단기 이동평균 < 장기 이동평균")
     
-    if len(sell_conditions) >= 3:
+    # 최소 3개의 조건이 충족되어야 진입
+    if cur_price < short_target and len(sell_conditions) >= 3:
         try:
             order = exchange.create_market_sell_order(symbol=symbol, amount=amount)
             position['type'] = 'short'
             position['amount'] = amount
             position['entry_price'] = cur_price
             position['initial_balance'] = get_balance()  # 초기 자산 기록
-            post_message(myToken, slackchannel, f"## 숏 포지션 진입 성공 ##\n진입 조건 충족: {', '.join(sell_conditions)}")
+            post_message(myToken, slackchannel, f"## 숏 포지션 진입 성공 ##\n진입 조건 충족: {', '.join(sell_conditions)}\n코인: {symbol}\n매수 금액: {amount:.2f}\n진입 가격: {cur_price:.5f}\n목표가: {short_target:.5f}")
         except Exception as e:
             post_message(myToken, slackchannel, f"!! 숏 포지션 진입 실패 !!\n{e}")
+
 
 # 포지션 종료 함수
 def exit_position(exchange, symbol, amount):
@@ -265,9 +264,6 @@ def exit_position(exchange, symbol, amount):
     except Exception as e:
         post_message(myToken, slackchannel, f"!!!!!! 포지션 종료 실패 !!!!!!\n{e}")
 
-# Threshold values for DIF and moving averages to determine significant difference
-threshold_dif = 1.5
-threshold_ma = 4
 
 # 통합 함수 ( 종료 조건 포함 )
 def enter_position(exchange, symbol, cur_price, long_target, short_target, amount):
@@ -308,7 +304,7 @@ def enter_position(exchange, symbol, cur_price, long_target, short_target, amoun
             if cur_price >= upper_band:
                 exit_conditions.append("현재가 >= 볼린저 밴드 상단")
 
-            if len(exit_conditions) >= 3:
+            if len(exit_conditions) >= 2 and cur_price > position['entry_price']:
                 exit_position(exchange, symbol, position['amount'])
                 post_message(myToken, slackchannel, f"롱 포지션 종료 조건 충족: {', '.join(exit_conditions)}")
 
@@ -330,9 +326,11 @@ def enter_position(exchange, symbol, cur_price, long_target, short_target, amoun
             if cur_price <= lower_band:
                 exit_conditions.append("현재가 <= 볼린저 밴드 하단")
 
-            if len(exit_conditions) >= 3:
+            if len(exit_conditions) >= 2 and cur_price < position['entry_price']:
                 exit_position(exchange, symbol, position['amount'])
                 post_message(myToken, slackchannel, f"숏 포지션 종료 조건 충족: {', '.join(exit_conditions)}")
+
+
 
 # trade 함수 실행 전, 마진 모드와 레버리지를 설정합니다.
 set_isolated_margin_and_leverage(binance, symbol, leverage=futureleverage)

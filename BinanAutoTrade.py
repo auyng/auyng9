@@ -390,7 +390,7 @@ def notify_exit():
 atexit.register(notify_exit)
 
 # 각 코인에 대해 30초마다 trade 함수 실행
-schedule.every(3).minutes.do(lambda: trade(symbol))
+schedule.every(30).seconds.do(lambda: trade(symbol))
 
 # 자동매매 시작 알람
 post_message(myToken, slackchannel, "@@ 선물거래 자동매매 시작 @@")

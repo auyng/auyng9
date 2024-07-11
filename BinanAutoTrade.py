@@ -155,6 +155,27 @@ def cal_amount(usdt_balance, cur_price):
         amount = min_notional / cur_price
     return amount
 
+def record_position_to_csv(action, position_type, amount, entry_price, exit_price=None, profit=None, profit_rate=None):
+    """포지션을 CSV 파일에 기록"""
+    file_exists = os.path.isfile('trades.csv')
+    columns = ['Datetime', 'Action', 'Position Type', 'Amount', 'Entry Price', 'Exit Price', 'Profit', 'Profit Rate']
+    data = {
+        'Datetime': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'Action': action,
+        'Position Type': position_type,
+        'Amount': amount,
+        'Entry Price': entry_price,
+        'Exit Price': exit_price,
+        'Profit': profit,
+        'Profit Rate': profit_rate
+    }
+    df = pd.DataFrame([data])
+
+    if not file_exists:
+        df.to_csv('trades.csv', index=False, columns=columns)
+    else:
+        df.to_csv('trades.csv', index=False, mode='a', header=False, columns=columns)
+
 # 포지션 진입 및 종료 함수
 def enter_long_position(exchange, symbol, amount, cur_price):
     global position
@@ -167,6 +188,7 @@ def enter_long_position(exchange, symbol, amount, cur_price):
         position['initial_balance'] = get_balance()
         entry_cost = amount * cur_price / futureleverage  # 진입 비용 계산
         post_message(myToken, slackchannel, f"## 롱 포지션 진입 ##\n코인: {symbol}\n진입 비용: {entry_cost:.2f} USDT\n진입 가격: {cur_price:.5f}")
+        record_position_to_csv('Enter', 'long', amount, cur_price)
     except Exception as e:
         post_message(myToken, slackchannel, f"!! 롱 포지션 진입 실패 !!\n{e}")
 
@@ -181,6 +203,7 @@ def enter_short_position(exchange, symbol, amount, cur_price):
         position['initial_balance'] = get_balance()
         entry_cost = amount * cur_price / futureleverage  # 진입 비용 계산
         post_message(myToken, slackchannel, f"## 숏 포지션 진입 ##\n코인: {symbol}\n진입 비용: {entry_cost:.2f} USDT\n진입 가격: {cur_price:.5f}")
+        record_position_to_csv('Enter', 'short', amount, cur_price)
     except Exception as e:
         post_message(myToken, slackchannel, f"!! 숏 포지션 진입 실패 !!\n{e}")
 
@@ -195,6 +218,7 @@ def exit_position(exchange, symbol, amount):
             profit = (final_price - position['entry_price']) * amount
             profit_rate = (final_price / position['entry_price'] - 1) * 100
             post_message(myToken, slackchannel, f"## 롱 포지션 종료 ##\n수익 금액: {profit:.2f} USDT\n수익률: {profit_rate:.2f}%")
+            record_position_to_csv('Exit', 'long', amount, position['entry_price'], final_price, profit, profit_rate)
             long_position_restriction = True
             short_position_restriction = False
         elif position['type'] == 'short':
@@ -202,6 +226,7 @@ def exit_position(exchange, symbol, amount):
             profit = (position['entry_price'] - final_price) * amount
             profit_rate = (position['entry_price'] / final_price - 1) * 100
             post_message(myToken, slackchannel, f"## 숏 포지션 종료 ##\n수익 금액: {profit:.2f} USDT\n수익률: {profit_rate:.2f}%")
+            record_position_to_csv('Exit', 'short', amount, position['entry_price'], final_price, profit, profit_rate)
             long_position_restriction = False
             short_position_restriction = True
         position['type'] = 'none'
@@ -267,7 +292,6 @@ def enter_position(exchange, symbol, cur_price, amount):
         #     exit_position(exchange, symbol, position['amount'])
         #     enter_long_position(exchange, symbol, amount, cur_price)
 
-
 # Trade
 def trade(symbol):
     balance = get_balance()
@@ -302,3 +326,4 @@ schedule.every(10).seconds.do(lambda: trade(symbol))
 while True:
     schedule.run_pending()
     time.sleep(1)
+

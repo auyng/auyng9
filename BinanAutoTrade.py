@@ -24,7 +24,7 @@ binance = ccxt.binance(config={
     }
 })
 
-symbol = "DYM/USDT"
+symbol = "BTC/USDT"
 timedata = '1h'
 futureleverage = 10
 
@@ -106,7 +106,7 @@ def get_current_price(symbol):
     ticker = binance.fetch_ticker(symbol)
     return ticker['last']
 
-def get_rsi(exchange, symbol, timeframe=timedata, period=14):
+def get_rsi(exchange, symbol, timeframe=timedata, period=6):
     """RSI (Relative Strength Index) 조회"""
     coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=period+1)
     df = pd.DataFrame(coin, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
@@ -227,19 +227,19 @@ def enter_position(exchange, symbol, cur_price, amount):
         if dif > dea and not long_position_restriction and short_ma > long_ma and cur_price < middle_band:
             enter_long_position(exchange, symbol, amount, cur_price)
             post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (dif > dea, short_ma > long_ma, cur_price < middle_band)")
-        elif rsi <= 15 and not long_position_restriction and cur_price < lower_band:
+        elif rsi <= 20 and not long_position_restriction and cur_price < lower_band:
             enter_long_position(exchange, symbol, amount, cur_price)
-            post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (rsi <= 15, cur_price > lower_band)")
+            post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (rsi <= 20, cur_price < lower_band)")
         elif dif < dea and not short_position_restriction and short_ma < long_ma and cur_price > middle_band:
             enter_short_position(exchange, symbol, amount, cur_price)
-            post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (dif < dea, short_ma < long_ma, cur_price > middle_band)")
-        elif rsi >= 85 and not short_position_restriction and cur_price > upper_band:
+            post_message(myToken, slackchannel, f"숏 포지션 진입 조건 충족 (dif < dea, short_ma < long_ma, cur_price > middle_band)")
+        elif rsi >= 80 and not short_position_restriction and cur_price > upper_band:
             enter_short_position(exchange, symbol, amount, cur_price)
-            post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (rsi <= 15, cur_price > lower_band)")
+            post_message(myToken, slackchannel, f"숏 포지션 진입 조건 충족 (rsi >= 80, cur_price > upper_band)")
 
     elif position['type'] == 'long':
-        if dif > dea and rsi >= 85 and cur_price > position['entry_price']:
-            post_message(myToken, slackchannel, f"롱 포지션 종료 조건 충족 (dif > dea, rsi >= 85, cur_price > entry_price)")
+        if dif > dea and rsi >= 80 and cur_price > position['entry_price']:
+            post_message(myToken, slackchannel, f"롱 포지션 종료 조건 충족 (dif > dea, rsi >= 80, cur_price > entry_price)")
             exit_position(exchange, symbol, position['amount'])
         elif cur_price >= position['entry_price'] * (1 + take_profit_ratio * futureleverage):
             post_message(myToken, slackchannel, "## 롱 포지션 익절 ##")
@@ -253,8 +253,8 @@ def enter_position(exchange, symbol, cur_price, amount):
         #    enter_short_position(exchange, symbol, amount, cur_price)
 
     elif position['type'] == 'short':
-        if dif < dea and rsi <= 15 and cur_price < position['entry_price']:
-            post_message(myToken, slackchannel, f"숏 포지션 종료 조건 충족 (dif < dea, rsi <= 15, cur_price < entry_price)")
+        if dif < dea and rsi <= 20 and cur_price < position['entry_price']:
+            post_message(myToken, slackchannel, f"숏 포지션 종료 조건 충족 (dif < dea, rsi <= 20, cur_price < entry_price)")
             exit_position(exchange, symbol, position['amount'])
         elif cur_price <= position['entry_price'] * (1 - take_profit_ratio * futureleverage):
             post_message(myToken, slackchannel, "## 숏 포지션 익절 ##")

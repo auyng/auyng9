@@ -12,7 +12,7 @@ import atexit
 
 api_key = ""
 secret = ""
-myToken = ""
+myToken = "---"
 slackchannel = "#autotrade"
 
 binance = ccxt.binance(config={
@@ -108,28 +108,45 @@ def get_current_price(symbol):
 
 def get_rsi(exchange, symbol, timeframe=timedata, period=6):
     """RSI (Relative Strength Index) 조회"""
-    coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=period+1)
+    coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=period*5)  # 더 많은 데이터를 가져와 초기값의 영향을 줄임
     df = pd.DataFrame(coin, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+    
     delta = df['close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-    rs = gain / loss
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    
+    avg_gain = gain.ewm(span=period, adjust=False).mean()
+    avg_loss = loss.ewm(span=period, adjust=False).mean()
+    
+    rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
+    
     return rsi.iloc[-1]
 
-def get_macd(exchange, symbol, short_period=12, long_period=26, signal_period=9):
+
+def get_macd(exchange, symbol, short_period=12, long_period=26, signal_period=9, timeframe=timedata):
     """MACD (Moving Average Convergence Divergence) 조회"""
-    coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timedata, limit=long_period + signal_period)
+    # OHLCV 데이터 가져오기
+    coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timeframe, limit=(long_period + signal_period)*3)
     df = pd.DataFrame(coin, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
+    
+    # 시간 순서로 데이터 정렬 (필요 시)
+    df.sort_values(by='datetime', inplace=True)
+    
+    # EMA 계산
     short_ema = df['close'].ewm(span=short_period, adjust=False).mean()
     long_ema = df['close'].ewm(span=long_period, adjust=False).mean()
+    
+    # MACD 계산
     dif = short_ema - long_ema
     dea = dif.ewm(span=signal_period, adjust=False).mean()
+    
     return dif.iloc[-1], dea.iloc[-1]
+
 
 def get_bollinger_bands(exchange, symbol, period=20, std_dev=2):
     """볼린저 밴드 계산"""
-    coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timedata, limit=period + 1)
+    coin = exchange.fetch_ohlcv(symbol=symbol, timeframe=timedata, limit=period+1)
     df = pd.DataFrame(coin, columns=['datetime', 'open', 'high', 'low', 'close', 'volume'])
     df['ma'] = df['close'].rolling(window=period).mean()
     df['std'] = df['close'].rolling(window=period).std()
@@ -157,7 +174,7 @@ def cal_amount(usdt_balance, cur_price):
 
 def record_position_to_csv(action, position_type, amount, entry_price, exit_price=None, profit=None, profit_rate=None):
     """포지션을 CSV 파일에 기록"""
-    file_exists = os.path.isfile('trades.csv')
+    file_exists = os.path.isfile('C:/cryptoauto/final.pytrades.csv')
     columns = ['Datetime', 'Action', 'Position Type', 'Amount', 'Entry Price', 'Exit Price', 'Profit', 'Profit Rate']
     data = {
         'Datetime': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -326,4 +343,3 @@ schedule.every(10).seconds.do(lambda: trade(symbol))
 while True:
     schedule.run_pending()
     time.sleep(1)
-

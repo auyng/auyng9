@@ -12,7 +12,7 @@ import atexit
 
 api_key = ""
 secret = ""
-myToken = "---"
+myToken = ""
 slackchannel = "#autotrade"
 
 binance = ccxt.binance(config={
@@ -123,7 +123,6 @@ def get_rsi(exchange, symbol, timeframe=timedata, period=6):
     
     return rsi.iloc[-1]
 
-
 def get_macd(exchange, symbol, short_period=12, long_period=26, signal_period=9, timeframe=timedata):
     """MACD (Moving Average Convergence Divergence) 조회"""
     # OHLCV 데이터 가져오기
@@ -142,7 +141,6 @@ def get_macd(exchange, symbol, short_period=12, long_period=26, signal_period=9,
     dea = dif.ewm(span=signal_period, adjust=False).mean()
     
     return dif.iloc[-1], dea.iloc[-1]
-
 
 def get_bollinger_bands(exchange, symbol, period=20, std_dev=2):
     """볼린저 밴드 계산"""
@@ -172,10 +170,10 @@ def cal_amount(usdt_balance, cur_price):
         amount = min_notional / cur_price
     return amount
 
-def record_position_to_csv(action, position_type, amount, entry_price, exit_price=None, profit=None, profit_rate=None):
+def record_position_to_csv(action, position_type, amount, entry_price, rsi, macd, signal, upper_band, lower_band, short_ma, long_ma, exit_price=None, profit=None, profit_rate=None):
     """포지션을 CSV 파일에 기록"""
-    file_exists = os.path.isfile('C:/cryptoauto/final.pytrades.csv')
-    columns = ['Datetime', 'Action', 'Position Type', 'Amount', 'Entry Price', 'Exit Price', 'Profit', 'Profit Rate']
+    file_exists = os.path.isfile('trades.csv')
+    columns = ['Datetime', 'Action', 'Position Type', 'Amount', 'Entry Price', 'Exit Price', 'Profit', 'Profit Rate', 'RSI', 'MACD', 'Signal', 'Upper Band', 'Lower Band', 'Short MA', 'Long MA']
     data = {
         'Datetime': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'Action': action,
@@ -184,7 +182,14 @@ def record_position_to_csv(action, position_type, amount, entry_price, exit_pric
         'Entry Price': entry_price,
         'Exit Price': exit_price,
         'Profit': profit,
-        'Profit Rate': profit_rate
+        'Profit Rate': profit_rate,
+        'RSI': rsi,
+        'MACD': macd,
+        'Signal': signal,
+        'Upper Band': upper_band,
+        'Lower Band': lower_band,
+        'Short MA': short_ma,
+        'Long MA': long_ma
     }
     df = pd.DataFrame([data])
 
@@ -194,7 +199,7 @@ def record_position_to_csv(action, position_type, amount, entry_price, exit_pric
         df.to_csv('trades.csv', index=False, mode='a', header=False, columns=columns)
 
 # 포지션 진입 및 종료 함수
-def enter_long_position(exchange, symbol, amount, cur_price):
+def enter_long_position(exchange, symbol, amount, cur_price, rsi, macd, signal, upper_band, lower_band, short_ma, long_ma):
     global position
     global long_position_restriction
     try:
@@ -205,11 +210,11 @@ def enter_long_position(exchange, symbol, amount, cur_price):
         position['initial_balance'] = get_balance()
         entry_cost = amount * cur_price / futureleverage  # 진입 비용 계산
         post_message(myToken, slackchannel, f"## 롱 포지션 진입 ##\n코인: {symbol}\n진입 비용: {entry_cost:.2f} USDT\n진입 가격: {cur_price:.5f}")
-        record_position_to_csv('Enter', 'long', amount, cur_price)
+        record_position_to_csv('Enter', 'long', amount, cur_price, rsi, macd, signal, upper_band, lower_band, short_ma, long_ma)
     except Exception as e:
         post_message(myToken, slackchannel, f"!! 롱 포지션 진입 실패 !!\n{e}")
 
-def enter_short_position(exchange, symbol, amount, cur_price):
+def enter_short_position(exchange, symbol, amount, cur_price, rsi, macd, signal, upper_band, lower_band, short_ma, long_ma):
     global position
     global short_position_restriction
     try:
@@ -220,7 +225,7 @@ def enter_short_position(exchange, symbol, amount, cur_price):
         position['initial_balance'] = get_balance()
         entry_cost = amount * cur_price / futureleverage  # 진입 비용 계산
         post_message(myToken, slackchannel, f"## 숏 포지션 진입 ##\n코인: {symbol}\n진입 비용: {entry_cost:.2f} USDT\n진입 가격: {cur_price:.5f}")
-        record_position_to_csv('Enter', 'short', amount, cur_price)
+        record_position_to_csv('Enter', 'short', amount, cur_price, rsi, macd, signal, upper_band, lower_band, short_ma, long_ma)
     except Exception as e:
         post_message(myToken, slackchannel, f"!! 숏 포지션 진입 실패 !!\n{e}")
 
@@ -230,12 +235,16 @@ def exit_position(exchange, symbol, amount):
     global short_position_restriction
     try:
         final_price = get_current_price(symbol)
+        rsi = get_rsi(exchange, symbol)
+        macd, signal = get_macd(exchange, symbol)
+        upper_band, lower_band, _ = get_bollinger_bands(exchange, symbol)
+        short_ma, long_ma = get_ma(exchange, symbol)
         if position['type'] == 'long':
             order = exchange.create_market_sell_order(symbol=symbol, amount=amount)
             profit = (final_price - position['entry_price']) * amount
             profit_rate = (final_price / position['entry_price'] - 1) * 100
             post_message(myToken, slackchannel, f"## 롱 포지션 종료 ##\n수익 금액: {profit:.2f} USDT\n수익률: {profit_rate:.2f}%")
-            record_position_to_csv('Exit', 'long', amount, position['entry_price'], final_price, profit, profit_rate)
+            record_position_to_csv('Exit', 'long', amount, position['entry_price'], rsi, macd, signal, upper_band, lower_band, short_ma, long_ma, final_price, profit, profit_rate)
             long_position_restriction = True
             short_position_restriction = False
         elif position['type'] == 'short':
@@ -243,7 +252,7 @@ def exit_position(exchange, symbol, amount):
             profit = (position['entry_price'] - final_price) * amount
             profit_rate = (position['entry_price'] / final_price - 1) * 100
             post_message(myToken, slackchannel, f"## 숏 포지션 종료 ##\n수익 금액: {profit:.2f} USDT\n수익률: {profit_rate:.2f}%")
-            record_position_to_csv('Exit', 'short', amount, position['entry_price'], final_price, profit, profit_rate)
+            record_position_to_csv('Exit', 'short', amount, position['entry_price'], rsi, macd, signal, upper_band, lower_band, short_ma, long_ma, final_price, profit, profit_rate)
             long_position_restriction = False
             short_position_restriction = True
         position['type'] = 'none'
@@ -267,16 +276,16 @@ def enter_position(exchange, symbol, cur_price, amount):
 
     if position['type'] == 'none':
         if dif > dea and not long_position_restriction and short_ma > long_ma and cur_price < middle_band:
-            enter_long_position(exchange, symbol, amount, cur_price)
+            enter_long_position(exchange, symbol, amount, cur_price, rsi, dif, dea, upper_band, lower_band, short_ma, long_ma)
             post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (dif > dea, short_ma > long_ma, cur_price < middle_band)")
         elif rsi <= 20 and not long_position_restriction and cur_price < lower_band:
-            enter_long_position(exchange, symbol, amount, cur_price)
+            enter_long_position(exchange, symbol, amount, cur_price, rsi, dif, dea, upper_band, lower_band, short_ma, long_ma)
             post_message(myToken, slackchannel, f"롱 포지션 진입 조건 충족 (rsi <= 20, cur_price < lower_band)")
         elif dif < dea and not short_position_restriction and short_ma < long_ma and cur_price > middle_band:
-            enter_short_position(exchange, symbol, amount, cur_price)
+            enter_short_position(exchange, symbol, amount, cur_price, rsi, dif, dea, upper_band, lower_band, short_ma, long_ma)
             post_message(myToken, slackchannel, f"숏 포지션 진입 조건 충족 (dif < dea, short_ma < long_ma, cur_price > middle_band)")
         elif rsi >= 80 and not short_position_restriction and cur_price > upper_band:
-            enter_short_position(exchange, symbol, amount, cur_price)
+            enter_short_position(exchange, symbol, amount, cur_price, rsi, dif, dea, upper_band, lower_band, short_ma, long_ma)
             post_message(myToken, slackchannel, f"숏 포지션 진입 조건 충족 (rsi >= 80, cur_price > upper_band)")
 
     elif position['type'] == 'long':
@@ -289,10 +298,6 @@ def enter_position(exchange, symbol, cur_price, amount):
         elif cur_price <= position['entry_price'] * (1 - stop_loss_ratio * futureleverage):
             post_message(myToken, slackchannel, "## 롱 포지션 손절 ##")
             exit_position(exchange, symbol, position['amount'])
-        #elif dif < dea and cur_price <= position['entry_price'] * (1 - stop_loss_ratio_immediately * futureleverage) and short_ma < long_ma:
-        #    post_message(myToken, slackchannel, "## 롱 포지션 종료 및 숏 포지션 진입 ##")
-        #    exit_position(exchange, symbol, position['amount'])
-        #    enter_short_position(exchange, symbol, amount, cur_price)
 
     elif position['type'] == 'short':
         if dif < dea and rsi <= 20 and cur_price < position['entry_price']:
@@ -304,10 +309,6 @@ def enter_position(exchange, symbol, cur_price, amount):
         elif cur_price >= position['entry_price'] * (1 + stop_loss_ratio * futureleverage):
             post_message(myToken, slackchannel, "## 숏 포지션 손절 ##")
             exit_position(exchange, symbol, position['amount'])
-        # elif dif > dea and cur_price >= position['entry_price'] * (1 + stop_loss_ratio_immediately * futureleverage) and short_ma > long_ma:
-        #     post_message(myToken, slackchannel, "## 숏 포지션 종료 및 롱 포지션 진입 ##")
-        #     exit_position(exchange, symbol, position['amount'])
-        #     enter_long_position(exchange, symbol, amount, cur_price)
 
 # Trade
 def trade(symbol):
